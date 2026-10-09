@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --bg:          #f7f7f5;
+  --card:        #ffffff;
+  --text:        #1a1a1a;
+  --text-2:      #5b5b5b;
+  --text-3:      #8a8a8a;
+  --border:      #e5e2dc;
+  --accent:      #d85a30;
+  --accent-hov:  #b8481f;
+  --accent-tint: #faeeda;
+  --success:     #0f6e56;
+  --success-tint:#e1f5ee;
+  --warning:     #854f0b;
+  --warning-tint:#faeeda;
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+}
+
+input, select, textarea {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Custom scrollbars for tables on mobile */
+.responsive-table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
