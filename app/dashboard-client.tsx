@@ -338,7 +338,12 @@ export function DashboardClient({
       const res = await triggerDailyVisitorNotificationsAction()
       if (res.ok && res.data) {
         const d = res.data
-        const msg = `✓ Ilitumwa kwa maduka ${d.notifications_sent} kati ya ${d.shops_evaluated} yaliyochunguzwa leo (${d.skipped_zero.length} bila wateja, ${d.skipped_already_sent.length} tayari yalitumiwa).`
+        const sentCount = d.sent?.length ?? d.notifications_sent ?? 0
+        const zeroCount = d.skipped_zero?.length ?? 0
+        const alreadyCount = (d.already_sent?.length ?? d.skipped_already_sent?.length ?? 0)
+        const totalCount = d.shops_evaluated ?? (sentCount + zeroCount + alreadyCount + (d.no_fcm_token?.length ?? 0))
+
+        const msg = `✓ Ilitumwa kwa maduka ${sentCount} kati ya ${totalCount} yaliyochunguzwa leo (${zeroCount} bila wateja, ${alreadyCount} tayari yalipokea).`
         setVisitorPushResult(msg)
       } else {
         const errMsg = res.error || 'Imeshindikana kutuma push notifications.'
@@ -350,6 +355,7 @@ export function DashboardClient({
       setVisitorPushPending(false)
     }
   }
+
 
 
   // Shop Registrations state

@@ -536,14 +536,16 @@ export async function getAdminVisitorStats(): Promise<AdminVisitorStatsResponse>
 export type VisitorNotificationTriggerResult = {
   ok: boolean
   date: string
-  shops_evaluated: number
-  notifications_sent: number
-  sent: Array<{ shop_id: number; name: string; seller_id: number; count: number }>
-  skipped_zero: Array<{ shop_id: number; name: string; count: number }>
-  skipped_already_sent: Array<{ shop_id: number; name: string; count: number }>
-  no_seller: Array<{ shop_id: number; name: string; count: number }>
-  no_fcm_token: Array<{ shop_id: number; name: string; seller_id: number | null; count: number }>
+  shops_evaluated?: number
+  notifications_sent?: number
+  sent?: Array<{ shop_id: number; name: string; seller_id?: number | null; count?: number }>
+  skipped_zero?: Array<{ shop_id: number; name: string; count?: number }>
+  already_sent?: Array<{ shop_id: number; name: string; count?: number; sent_at?: string | null }>
+  skipped_already_sent?: Array<{ shop_id: number; name: string; count?: number }>
+  no_seller?: Array<{ shop_id: number; name: string; count?: number }>
+  no_fcm_token?: Array<{ shop_id: number; name: string; seller_id?: number | null; count?: number }>
 }
+
 
 export async function triggerDailyVisitorNotifications(
   date?: string,
