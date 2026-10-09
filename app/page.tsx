@@ -1,12 +1,13 @@
 import {
   listShops, listShipments, listRiders, listSellers, listOrderChats,
   listShopRegistrations, listRiderRegistrations, getConversionMetrics,
+  getAdminVisitorStats,
   Shop, Shipment, Rider, Seller, OrderChat,
-  ShopRegistration, RiderRegistration, ConversionMetrics
+  ShopRegistration, RiderRegistration, ConversionMetrics, AdminVisitorStatsResponse
 } from '@/lib/api'
 import {
   mockShops, mockShipments, mockRiders, mockSellers, mockOrderChats,
-  mockRiderRegistrations, mockConversionMetrics
+  mockRiderRegistrations, mockConversionMetrics, mockVisitorStats
 } from '@/lib/mock-data'
 import { DashboardClient } from './dashboard-client'
 
@@ -21,6 +22,7 @@ export default async function AdminPage() {
   let shopRegistrations: ShopRegistration[] = []
   let riderRegistrations: RiderRegistration[] = []
   let conversionMetrics: ConversionMetrics = mockConversionMetrics
+  let visitorStats: AdminVisitorStatsResponse = mockVisitorStats
   let loadError: string | null = null
 
   try {
@@ -69,6 +71,12 @@ export default async function AdminPage() {
     conversionMetrics = mockConversionMetrics
   }
 
+  try {
+    visitorStats = await getAdminVisitorStats()
+  } catch {
+    visitorStats = mockVisitorStats
+  }
+
   if (loadError) {
     return (
       <main style={{ maxWidth: 900, margin: '0 auto', padding: '32px 20px' }}>
@@ -97,6 +105,8 @@ export default async function AdminPage() {
       initialRegistrations={shopRegistrations}
       initialRiderRegistrations={riderRegistrations}
       initialConversionMetrics={conversionMetrics}
+      initialVisitorStats={visitorStats}
     />
   )
 }
+

@@ -8,8 +8,10 @@ import {
   approveShopRegistration, rejectShopRegistration,
   createRider, deleteRider, resetRiders,
   approveRiderRegistration, rejectRiderRegistration,
-  updateFollowUp, BroadcastAudience
+  updateFollowUp, BroadcastAudience,
+  triggerDailyVisitorNotifications
 } from '@/lib/api'
+
 import { destroySession } from '@/lib/session'
 
 export async function registerShop(
@@ -267,3 +269,17 @@ export async function rejectRegistrationAction(regId: number) {
     return { ok: false, error: e instanceof Error ? e.message : 'Failed to reject registration' }
   }
 }
+
+export async function triggerDailyVisitorNotificationsAction(date?: string) {
+  try {
+    const res = await triggerDailyVisitorNotifications(date)
+    revalidatePath('/')
+    return { ok: true, data: res }
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'Failed to trigger visitor notifications.',
+    }
+  }
+}
+

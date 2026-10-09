@@ -3,15 +3,17 @@
 import React, { useState, useEffect, useTransition, useActionState, useRef } from 'react'
 import {
   Shop, Shipment, Rider, Seller, OrderChat,
-  ShopRegistration, RiderRegistration, ConversionMetrics, BroadcastAudience
+  ShopRegistration, RiderRegistration, ConversionMetrics, BroadcastAudience,
+  AdminVisitorStatsResponse
 } from '@/lib/api'
 import {
   logout, registerShop, registerRider, toggleRiderStatus,
   fetchShipmentTracking, removeShop, announceToAll, removeShipment,
   removeOrderChat, approveRegistrationAction, rejectRegistrationAction,
   removeRider, approveRiderRegistrationAction,
-  rejectRiderRegistrationAction
+  rejectRiderRegistrationAction, triggerDailyVisitorNotificationsAction
 } from './actions'
+
 import { CopyTokenButton } from './copy-token-button'
 import { DeleteShopButton } from './delete-shop-button'
 import { EditShopButton } from './edit-shop-button'
@@ -287,6 +289,7 @@ interface DashboardClientProps {
   initialRegistrations?: ShopRegistration[]
   initialRiderRegistrations?: RiderRegistration[]
   initialConversionMetrics?: ConversionMetrics
+  initialVisitorStats?: AdminVisitorStatsResponse
 }
 
 export function DashboardClient({
@@ -296,6 +299,7 @@ export function DashboardClient({
   initialOrderChats,
   initialRegistrations = [],
   initialRiderRegistrations = [],
+  initialVisitorStats,
 }: DashboardClientProps) {
   const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'shipments' | 'riders' | 'chats' | 'conversion' | 'shops' | 'broadcast'>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -305,6 +309,48 @@ export function DashboardClient({
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [followUpOrder, setFollowUpOrder] = useState<OrderChat | null>(null)
   const [resetRidersOpen, setResetRidersOpen] = useState(false)
+
+  // Visitor notifications & stats
+  const [visitorStats] = useState<AdminVisitorStatsResponse | undefined>(initialVisitorStats)
+  const [visitorPushPending, setVisitorPushPending] = useState(false)
+  const [visitorPushResult, setVisitorPushResult] = useState<string | null>(null)
+
+  const shopVisitorsMap = React.useMemo(() => {
+    const map: Record<number, { today_visitors: number; yesterday_visitors: number }> = {}
+    if (visitorStats?.shops) {
+      for (const s of visitorStats.shops) {
+        map[s.shop_id] = {
+          today_visitors: s.today_visitors,
+          yesterday_visitors: s.yesterday_visitors,
+        }
+      }
+    }
+    return map
+  }, [visitorStats])
+
+  const handleTriggerVisitorPush = async () => {
+    if (!confirm('Tuma push notifications kwa wamiliki wa maduka yaliyotembelewa leo? (Maduka yenye wateja > 0 pekee ndio yatapokea taarifa)')) {
+      return
+    }
+    setVisitorPushPending(true)
+    setVisitorPushResult(null)
+    try {
+      const res = await triggerDailyVisitorNotificationsAction()
+      if (res.ok && res.data) {
+        const d = res.data
+        const msg = `✓ Ilitumwa kwa maduka ${d.notifications_sent} kati ya ${d.shops_evaluated} yaliyochunguzwa leo (${d.skipped_zero.length} bila wateja, ${d.skipped_already_sent.length} tayari yalitumiwa).`
+        setVisitorPushResult(msg)
+      } else {
+        const errMsg = res.error || 'Imeshindikana kutuma push notifications.'
+        setVisitorPushResult(`✕ ${errMsg}`)
+      }
+    } catch (e) {
+      setVisitorPushResult(e instanceof Error ? `✕ ${e.message}` : '✕ Hitilafu imetokea.')
+    } finally {
+      setVisitorPushPending(false)
+    }
+  }
+
 
   // Shop Registrations state
   const [registrations, setRegistrations] = useState<ShopRegistration[]>(initialRegistrations)
@@ -734,7 +780,7 @@ export function DashboardClient({
               </div>
 
               {/* Stat Cards */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
                 <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
                   <div className="text-xs font-semibold text-[#5b5b5b]">Active Deliveries</div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#d85a30] mt-1">
@@ -756,6 +802,16 @@ export function DashboardClient({
                 </div>
 
                 <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
+                  <div className="text-xs font-semibold text-[#5b5b5b]">Shop Visitors (Leo)</div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-[#0f6e56] mt-1">
+                    {visitorStats?.total_today_visitors ?? 0}
+                  </div>
+                  <div className="text-[11px] text-[#8a8a8a] mt-1">
+                    {visitorStats?.total_yesterday_visitors ?? 0} jana ({visitorStats?.date || 'Leo'})
+                  </div>
+                </div>
+
+                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
                   <div className="text-xs font-semibold text-[#5b5b5b]">Active Riders</div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#0f6e56] mt-1">
                     {activeRidersCount}
@@ -765,7 +821,7 @@ export function DashboardClient({
                   </div>
                 </div>
 
-                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
+                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs col-span-2 sm:col-span-1">
                   <div className="text-xs font-semibold text-[#5b5b5b]">Stalled Inquiries</div>
                   <div className="text-2xl sm:text-3xl font-extrabold text-[#854f0b] mt-1">
                     {stalledInquiries.length}
@@ -775,6 +831,7 @@ export function DashboardClient({
                   </div>
                 </div>
               </div>
+
 
               {/* Shipments Chart */}
               <ShipmentsChart shipments={initialShipments} />
@@ -1696,7 +1753,30 @@ export function DashboardClient({
                     Manage merchant profiles, generate shop claim tokens, and configure storefronts.
                   </p>
                 </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleTriggerVisitorPush}
+                    disabled={visitorPushPending}
+                    className="px-3.5 py-2 bg-white border border-[#e5e2dc] hover:bg-[#f7f7f5] text-[#1a1a1a] rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 transition-colors disabled:opacity-50"
+                    title="Tuma taarifa ya wageni wa leo mara moja kwa wamiliki wa maduka yaliyotembelewa"
+                  >
+                    <span>👀</span>
+                    <span>{visitorPushPending ? 'Inatuma Push…' : 'Tuma Push ya Wageni Leo'}</span>
+                  </button>
+                </div>
               </div>
+
+              {visitorPushResult && (
+                <div className="mb-4 p-3 rounded-xl text-xs font-medium bg-[#f0faf5] border border-[#0f6e56]/20 text-[#0f6e56] flex items-center justify-between">
+                  <span>{visitorPushResult}</span>
+                  <button
+                    onClick={() => setVisitorPushResult(null)}
+                    className="text-base text-[#5b5b5b] hover:text-[#1a1a1a] leading-none ml-2"
+                  >
+                    &times;
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                 {/* Shops Table */}
@@ -1720,6 +1800,7 @@ export function DashboardClient({
                         <tr>
                           <th className="p-3.5">Shop Name</th>
                           <th className="p-3.5">Phone & Location</th>
+                          <th className="p-3.5">Visitors Today</th>
                           <th className="p-3.5">Claim Token</th>
                           <th className="p-3.5">Status</th>
                           <th className="p-3.5 text-right">Actions</th>
@@ -1728,7 +1809,7 @@ export function DashboardClient({
                       <tbody className="divide-y divide-[#e5e2dc]">
                         {filteredShops.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="p-8 text-center text-[#8a8a8a]">
+                            <td colSpan={6} className="p-8 text-center text-[#8a8a8a]">
                               No shops registered.
                             </td>
                           </tr>
@@ -1742,6 +1823,15 @@ export function DashboardClient({
                               <td className="p-3.5 text-[#5b5b5b]">
                                 <div>{shop.phone}</div>
                                 <div className="text-[11px]">{shop.location || '—'}</div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="inline-flex items-center gap-1.5 font-bold text-xs text-[#0f6e56] bg-[#e1f5ee] px-2.5 py-1 rounded-lg">
+                                  <span>👀</span>
+                                  <span>{shopVisitorsMap[shop.shop_id]?.today_visitors ?? 0}</span>
+                                </div>
+                                <div className="text-[10px] text-[#8a8a8a] mt-0.5">
+                                  Jana: {shopVisitorsMap[shop.shop_id]?.yesterday_visitors ?? 0}
+                                </div>
                               </td>
                               <td className="p-3.5">
                                 <div className="flex items-center gap-1 font-mono font-bold text-xs text-[#d85a30]">
@@ -1765,6 +1855,7 @@ export function DashboardClient({
                     </table>
                   </div>
                 </div>
+
 
                 {/* Add Shop Form */}
                 <div className="bg-white border border-[#e5e2dc] rounded-2xl p-5 shadow-xs lg:col-span-1">

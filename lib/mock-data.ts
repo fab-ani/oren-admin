@@ -1,7 +1,7 @@
 // Dev-only stand-in data, used when the Flask backend rejects requests
 // (e.g. FLASK_ADMIN_TOKEN is still a placeholder) so the dashboard UI can
 // be exercised locally without real backend access. See app/page.tsx.
-import { Shop, Shipment, Rider, Seller, OrderChat, RiderRegistration, ConversionMetrics } from './api'
+import { Shop, Shipment, Rider, Seller, OrderChat, RiderRegistration, ConversionMetrics, AdminVisitorStatsResponse } from './api'
 
 export const mockSellers: Seller[] = [
   { id: 1, name: 'Amina Hassan', phone: '0712345678', created_at: '2026-07-01T09:00:00Z' },
@@ -138,3 +138,12 @@ export const mockShipments: Shipment[] = [
     confirmed_by: 'customer',
   },
 ]
+
+export const mockVisitorStats: AdminVisitorStatsResponse = {
+  ok: true,
+  date: '2026-10-09',
+  total_today_visitors: 0,
+  total_yesterday_visitors: 0,
+  shops: [],
+}
+

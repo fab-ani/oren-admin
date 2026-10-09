@@ -503,3 +503,65 @@ export async function updateFollowUp(
   }
 }
 
+export type ShopVisitorStat = {
+  shop_id: number
+  name: string
+  phone: string
+  seller_id: number | null
+  today_visitors: number
+  yesterday_visitors: number
+}
+
+export type AdminVisitorStatsResponse = {
+  ok: boolean
+  date: string
+  total_today_visitors: number
+  total_yesterday_visitors: number
+  shops: ShopVisitorStat[]
+}
+
+export async function getAdminVisitorStats(): Promise<AdminVisitorStatsResponse> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/visitors/stats`, {
+    headers: { 'X-Admin-Token': ADMIN_TOKEN! },
+    cache: 'no-store',
+  })
+  const body = await res.json()
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error || `Failed to load visitor stats (${res.status})`)
+  }
+  return body as AdminVisitorStatsResponse
+}
+
+export type VisitorNotificationTriggerResult = {
+  ok: boolean
+  date: string
+  shops_evaluated: number
+  notifications_sent: number
+  sent: Array<{ shop_id: number; name: string; seller_id: number; count: number }>
+  skipped_zero: Array<{ shop_id: number; name: string; count: number }>
+  skipped_already_sent: Array<{ shop_id: number; name: string; count: number }>
+  no_seller: Array<{ shop_id: number; name: string; count: number }>
+  no_fcm_token: Array<{ shop_id: number; name: string; seller_id: number | null; count: number }>
+}
+
+export async function triggerDailyVisitorNotifications(
+  date?: string,
+): Promise<VisitorNotificationTriggerResult> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/jobs/send-daily-visitor-notifications`, {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': ADMIN_TOKEN!,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(date ? { date } : {}),
+  })
+  const body = await res.json()
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error || `Failed to trigger visitor notifications (${res.status})`)
+  }
+  return body as VisitorNotificationTriggerResult
+}
+
+
