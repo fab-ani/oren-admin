@@ -566,4 +566,27 @@ export async function triggerDailyVisitorNotifications(
   return body as VisitorNotificationTriggerResult
 }
 
+export type AdminEvent = {
+  id: string
+  type: 'order_completed' | 'visitor_job_completed' | string
+  title: string
+  message: string
+  timestamp: string | null
+  metadata?: Record<string, unknown>
+}
+
+export async function getRecentAdminEvents(): Promise<AdminEvent[]> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/events/recent`, {
+    headers: { 'X-Admin-Token': ADMIN_TOKEN! },
+    cache: 'no-store',
+  })
+  const body = await res.json()
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error || `Failed to load recent events (${res.status})`)
+  }
+  return (body.events || []) as AdminEvent[]
+}
+
+
 

@@ -4,14 +4,14 @@ import React, { useState, useEffect, useTransition, useActionState, useRef } fro
 import {
   Shop, Shipment, Rider, Seller, OrderChat,
   ShopRegistration, RiderRegistration, ConversionMetrics, BroadcastAudience,
-  AdminVisitorStatsResponse
+  AdminVisitorStatsResponse, AdminEvent
 } from '@/lib/api'
 import {
   logout, registerShop, registerRider, toggleRiderStatus,
   fetchShipmentTracking, removeShop, announceToAll, removeShipment,
   removeOrderChat, approveRegistrationAction, rejectRegistrationAction,
   removeRider, approveRiderRegistrationAction,
-  rejectRiderRegistrationAction
+  rejectRiderRegistrationAction, fetchRecentAdminEventsAction
 } from './actions'
 
 
@@ -281,6 +281,43 @@ function DeliveryRouteMap({ shipment }: { shipment: Shipment }) {
   )
 }
 
+function playNotificationChime() {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const now = ctx.currentTime
+
+    // Tone 1: 587.33 Hz (D5)
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.setValueAtTime(587.33, now)
+    gain1.gain.setValueAtTime(0.2, now)
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25)
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    osc1.start(now)
+    osc1.stop(now + 0.25)
+
+    // Tone 2: 880 Hz (A5) - cheerful alert
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.setValueAtTime(880, now + 0.15)
+    gain2.gain.setValueAtTime(0.25, now + 0.15)
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5)
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    osc2.start(now + 0.15)
+    osc2.stop(now + 0.5)
+  } catch {
+    // Autoplay or audio context initialization silently ignored
+  }
+}
+
 interface DashboardClientProps {
   initialShops: Shop[]
   initialShipments: Shipment[]
@@ -291,6 +328,7 @@ interface DashboardClientProps {
   initialRiderRegistrations?: RiderRegistration[]
   initialConversionMetrics?: ConversionMetrics
   initialVisitorStats?: AdminVisitorStatsResponse
+  initialRecentEvents?: AdminEvent[]
 }
 
 export function DashboardClient({
@@ -301,6 +339,7 @@ export function DashboardClient({
   initialRegistrations = [],
   initialRiderRegistrations = [],
   initialVisitorStats,
+  initialRecentEvents = [],
 }: DashboardClientProps) {
   const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'shipments' | 'riders' | 'chats' | 'conversion' | 'shops' | 'broadcast'>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -310,6 +349,126 @@ export function DashboardClient({
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [followUpOrder, setFollowUpOrder] = useState<OrderChat | null>(null)
   const [resetRidersOpen, setResetRidersOpen] = useState(false)
+
+  // Mobile & Web Live Notifications State
+  const [recentEvents, setRecentEvents] = useState<AdminEvent[]>(initialRecentEvents)
+  const [seenEventIds, setSeenEventIds] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('oren_seen_event_ids')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (Array.isArray(parsed)) return new Set(parsed)
+        }
+      } catch {}
+    }
+    return new Set(initialRecentEvents.map((e) => e.id))
+  })
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('default')
+  const [toastNotification, setToastNotification] = useState<AdminEvent | null>(null)
+  const [notificationsPanelOpen, setNotificationsPanelOpen] = useState(false)
+  const [soundEnabled, setSoundEnabled] = useState(true)
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (typeof window !== 'undefined') {
+        if (!('Notification' in window)) {
+          setNotificationPermission('unsupported')
+        } else {
+          setNotificationPermission(Notification.permission)
+        }
+      }
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const requestNotificationPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      alert('Browser push notifications are not supported on this browser or device.')
+      return
+    }
+    try {
+      const perm = await Notification.requestPermission()
+      setNotificationPermission(perm)
+      if (perm === 'granted') {
+        playNotificationChime()
+        try {
+          new Notification('🔔 Oren Push Notifications Active', {
+            body: 'You will receive instant alerts on this phone when orders complete or visitor notifications are sent.',
+            icon: '/favicon.ico',
+          })
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Failed to request notification permission:', err)
+    }
+  }
+
+  // Polling for recent events every 25 seconds
+  useEffect(() => {
+    try {
+      if (seenEventIds.size > 0) {
+        localStorage.setItem('oren_seen_event_ids', JSON.stringify(Array.from(seenEventIds).slice(-100)))
+      }
+    } catch {}
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetchRecentAdminEventsAction()
+        if (res.ok && res.events && res.events.length > 0) {
+          setRecentEvents(res.events)
+
+          // Check for new unseen events
+          const newEvents = res.events.filter((e) => !seenEventIds.has(e.id))
+          if (newEvents.length > 0) {
+            const nextSeen = new Set(seenEventIds)
+            newEvents.forEach((e) => nextSeen.add(e.id))
+            setSeenEventIds(nextSeen)
+            try {
+              localStorage.setItem('oren_seen_event_ids', JSON.stringify(Array.from(nextSeen).slice(-100)))
+            } catch {}
+
+            // Trigger alert for the newest event
+            const latestEvent = newEvents[0]
+            setToastNotification(latestEvent)
+
+            if (soundEnabled) {
+              playNotificationChime()
+            }
+
+            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+              try {
+                navigator.vibrate([200, 100, 200])
+              } catch {}
+            }
+
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              try {
+                new Notification(latestEvent.title, {
+                  body: latestEvent.message,
+                  icon: '/favicon.ico',
+                })
+              } catch {}
+            }
+          }
+        }
+      } catch {
+        // Tolerated polling failure
+      }
+    }, 25000)
+
+    return () => clearInterval(interval)
+  }, [seenEventIds, soundEnabled])
+
+  // Toast auto-dismiss after 7 seconds
+  useEffect(() => {
+    if (toastNotification) {
+      const timer = setTimeout(() => {
+        setToastNotification(null)
+      }, 7000)
+      return () => clearTimeout(timer)
+    }
+  }, [toastNotification])
 
   // Visitor notifications & stats
   const [visitorStats] = useState<AdminVisitorStatsResponse | undefined>(initialVisitorStats)
@@ -658,6 +817,21 @@ export function DashboardClient({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Notification Bell */}
+          <button
+            onClick={() => setNotificationsPanelOpen(true)}
+            className="relative p-1.5 rounded-lg border border-[#e5e2dc] text-[#1a1a1a] hover:bg-[#f7f7f5] transition-colors"
+            title="Notifications & Alerts"
+            aria-label="Open notifications"
+          >
+            <span className="text-base leading-none">🔔</span>
+            {notificationPermission !== 'granted' ? (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[#d85a30] rounded-full ring-2 ring-white" />
+            ) : recentEvents.length > 0 ? (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#0f6e56] rounded-full ring-2 ring-white" />
+            ) : null}
+          </button>
+
           {totalPendingRequests > 0 && (
             <button
               onClick={() => setCurrentTab('requests')}
@@ -734,6 +908,52 @@ export function DashboardClient({
 
       {/* Main Content Area */}
       <main className="lg:pl-64 flex-1">
+        {/* Desktop Sticky Header Bar */}
+        <div className="hidden lg:flex items-center justify-between px-8 py-3 bg-white border-b border-[#e5e2dc] sticky top-0 z-20">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-[#f7f7f5] border border-[#e5e2dc] px-2.5 py-1 rounded-full">
+              <div className="w-2 h-2 rounded-full bg-[#0f6e56] animate-pulse" />
+              <span className="text-xs font-semibold text-[#5b5b5b]">Live Push & Delivery Sync</span>
+            </div>
+            {notificationPermission !== 'granted' && (
+              <button
+                onClick={requestNotificationPermission}
+                className="text-xs bg-[#faeeda] text-[#854f0b] hover:bg-[#f5e3be] font-bold px-3 py-1 rounded-full border border-[#edd7a6] transition-colors flex items-center gap-1.5"
+              >
+                <span>🔔</span> Enable Browser Notifications
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                const next = !soundEnabled
+                setSoundEnabled(next)
+                if (next) playNotificationChime()
+              }}
+              className="p-1.5 text-xs text-[#5b5b5b] hover:text-[#1a1a1a] border border-[#e5e2dc] rounded-lg bg-white flex items-center gap-1 px-2.5 transition-colors"
+              title={soundEnabled ? 'Mute notification sound' : 'Enable notification sound'}
+            >
+              <span>{soundEnabled ? '🔊 Sound On' : '🔇 Muted'}</span>
+            </button>
+
+            <button
+              onClick={() => setNotificationsPanelOpen(true)}
+              className="relative p-2 rounded-xl border border-[#e5e2dc] text-[#1a1a1a] hover:bg-[#f7f7f5] transition-colors flex items-center gap-2"
+              title="Notifications & Activity Log"
+            >
+              <span className="text-base leading-none">🔔</span>
+              <span className="text-xs font-bold text-[#1a1a1a]">Alerts</span>
+              {recentEvents.length > 0 && (
+                <span className="text-[11px] font-extrabold px-1.5 py-0.2 bg-[#d85a30] text-white rounded-full">
+                  {recentEvents.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
           {/* TAB: OVERVIEW */}
           {currentTab === 'overview' && (
@@ -1952,6 +2172,207 @@ export function DashboardClient({
           currentCount={initialRiders.length}
           onClose={() => setResetRidersOpen(false)}
         />
+      )}
+
+      {/* FLOATING TOAST NOTIFICATION */}
+      {toastNotification && (
+        <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 max-w-sm sm:max-w-md w-[calc(100%-2rem)] bg-white border-2 border-[#d85a30] shadow-2xl rounded-2xl p-4 transition-all duration-300">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#faeeda] text-xl flex items-center justify-center shrink-0">
+                {toastNotification.type === 'order_completed' ? '📦' : toastNotification.type === 'visitor_job_completed' ? '👥' : '🔔'}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#faeeda] text-[#d85a30]">
+                    {toastNotification.type === 'order_completed' ? 'Delivered Order' : toastNotification.type === 'visitor_job_completed' ? 'Visitor Push Sent' : 'Alert'}
+                  </span>
+                  {toastNotification.timestamp && (
+                    <span className="text-[11px] text-[#8a8a8a]">
+                      {new Date(toastNotification.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+                <h4 className="font-bold text-sm text-[#1a1a1a] mt-1">
+                  {toastNotification.title}
+                </h4>
+                <p className="text-xs text-[#5b5b5b] mt-0.5 leading-relaxed">
+                  {toastNotification.message}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setToastNotification(null)}
+              className="text-[#8a8a8a] hover:text-[#1a1a1a] text-lg font-bold leading-none p-1 shrink-0"
+              aria-label="Dismiss toast"
+            >
+              &times;
+            </button>
+          </div>
+          <div className="mt-3 pt-2.5 border-t border-[#f0eee9] flex items-center justify-between text-xs">
+            <button
+              onClick={() => {
+                setToastNotification(null)
+                setNotificationsPanelOpen(true)
+              }}
+              className="font-bold text-[#d85a30] hover:underline"
+            >
+              View Activity Feed →
+            </button>
+            <span className="text-[11px] text-[#8a8a8a]">Auto-dismisses in 7s</span>
+          </div>
+        </div>
+      )}
+
+      {/* NOTIFICATION CENTER SLIDE-OVER DRAWER */}
+      {notificationsPanelOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+            onClick={() => setNotificationsPanelOpen(false)}
+          />
+          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col z-50">
+            {/* Header */}
+            <div className="p-4 sm:p-5 border-b border-[#e5e2dc] flex items-center justify-between bg-[#fafaf8]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-[#faeeda] text-[#d85a30] flex items-center justify-center text-lg font-bold">
+                  🔔
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-[#1a1a1a] leading-tight">
+                    Notifications & Alerts
+                  </h3>
+                  <p className="text-xs text-[#8a8a8a]">
+                    Orders completed & visitor push summaries
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNotificationsPanelOpen(false)}
+                className="text-2xl text-[#8a8a8a] hover:text-[#1a1a1a] leading-none p-1"
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Permission & Sound Status Card */}
+            <div className="p-4 border-b border-[#e5e2dc] bg-[#fdfbf7] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#1a1a1a]">Push Notification Status:</span>
+                {notificationPermission === 'granted' ? (
+                  <span className="text-xs font-bold text-[#0f6e56] bg-[#e1f5ee] px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span>✓</span> Enabled on this device
+                  </span>
+                ) : notificationPermission === 'denied' ? (
+                  <span className="text-xs font-bold text-[#c0392b] bg-[#fdf0ee] px-2 py-0.5 rounded-full">
+                    Blocked in browser
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-[#854f0b] bg-[#faeeda] px-2 py-0.5 rounded-full">
+                    Not yet granted
+                  </span>
+                )}
+              </div>
+
+              {notificationPermission !== 'granted' && (
+                <div className="bg-white border border-[#edd7a6] rounded-xl p-3 shadow-xs">
+                  <p className="text-xs text-[#854f0b] mb-2 leading-relaxed">
+                    Allow notifications so your phone rings and shows alerts when orders are completed or daily shop visitor notifications are dispatched.
+                  </p>
+                  <button
+                    onClick={requestNotificationPermission}
+                    className="w-full bg-[#d85a30] hover:bg-[#b8481f] text-white font-bold text-xs py-2 px-3 rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <span>🔔</span> Enable Push on Mobile
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <button
+                  onClick={() => playNotificationChime()}
+                  className="text-xs font-bold text-[#d85a30] hover:underline flex items-center gap-1"
+                >
+                  <span>🎵</span> Test Sound Chime
+                </button>
+                <button
+                  onClick={() => setSoundEnabled((prev) => !prev)}
+                  className="text-xs font-semibold text-[#5b5b5b] hover:text-[#1a1a1a]"
+                >
+                  {soundEnabled ? '🔊 Sound On' : '🔇 Sound Muted'}
+                </button>
+              </div>
+            </div>
+
+            {/* Event List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="flex items-center justify-between pb-1">
+                <span className="text-xs font-bold text-[#5b5b5b] uppercase tracking-wider">
+                  Recent Events ({recentEvents.length})
+                </span>
+                <span className="text-[11px] text-[#8a8a8a]">Auto-synced every 25s</span>
+              </div>
+
+              {recentEvents.length === 0 ? (
+                <div className="text-center py-12 text-[#8a8a8a] text-xs">
+                  <div className="text-3xl mb-2">📭</div>
+                  No events recorded yet. Completed orders and visitor push jobs will appear here automatically.
+                </div>
+              ) : (
+                recentEvents.map((evt) => (
+                  <div
+                    key={evt.id}
+                    className="bg-white border border-[#e5e2dc] rounded-xl p-3.5 shadow-xs hover:border-[#d85a30]/40 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">
+                          {evt.type === 'order_completed' ? '📦' : evt.type === 'visitor_job_completed' ? '👥' : '🔔'}
+                        </span>
+                        <span className="font-bold text-xs text-[#1a1a1a]">
+                          {evt.title}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#8a8a8a] shrink-0 whitespace-nowrap">
+                        {evt.timestamp ? new Date(evt.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#5b5b5b] mt-1.5 leading-relaxed pl-7">
+                      {evt.message}
+                    </p>
+                    {evt.metadata && (
+                      <div className="mt-2 pl-7 flex flex-wrap gap-2 text-[10px] text-[#8a8a8a]">
+                        {Boolean(evt.metadata.order_id) && (
+                          <span className="bg-[#f7f7f5] px-2 py-0.5 rounded border border-[#e5e2dc]">
+                            Order #{String(evt.metadata.order_id)}
+                          </span>
+                        )}
+                        {Boolean(evt.metadata.confirmed_by) && (
+                          <span className="bg-[#e1f5ee] text-[#0f6e56] px-2 py-0.5 rounded font-bold">
+                            Confirmed by {String(evt.metadata.confirmed_by)}
+                          </span>
+                        )}
+                        {evt.metadata.shops_notified_count != null && (
+                          <span className="bg-[#faeeda] text-[#854f0b] px-2 py-0.5 rounded font-bold">
+                            {String(evt.metadata.shops_notified_count)} shops notified
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-[#e5e2dc] bg-[#fafaf8] text-center">
+              <span className="text-[11px] text-[#8a8a8a]">
+                Admin phone <strong className="text-[#1a1a1a]">0748612565</strong> receives native FCM pushes directly.
+              </span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

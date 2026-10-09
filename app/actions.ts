@@ -9,8 +9,10 @@ import {
   createRider, deleteRider, resetRiders,
   approveRiderRegistration, rejectRiderRegistration,
   updateFollowUp, BroadcastAudience,
-  triggerDailyVisitorNotifications
+  triggerDailyVisitorNotifications,
+  getRecentAdminEvents
 } from '@/lib/api'
+
 
 import { destroySession } from '@/lib/session'
 
@@ -282,4 +284,14 @@ export async function triggerDailyVisitorNotificationsAction(date?: string) {
     }
   }
 }
+
+export async function fetchRecentAdminEventsAction() {
+  try {
+    const events = await getRecentAdminEvents()
+    return { ok: true, events }
+  } catch (e) {
+    return { ok: false, events: [], error: e instanceof Error ? e.message : 'Failed to fetch events' }
+  }
+}
+
 

@@ -1,9 +1,10 @@
 import {
   listShops, listShipments, listRiders, listSellers, listOrderChats,
   listShopRegistrations, listRiderRegistrations, getConversionMetrics,
-  getAdminVisitorStats,
+  getAdminVisitorStats, getRecentAdminEvents,
   Shop, Shipment, Rider, Seller, OrderChat,
-  ShopRegistration, RiderRegistration, ConversionMetrics, AdminVisitorStatsResponse
+  ShopRegistration, RiderRegistration, ConversionMetrics, AdminVisitorStatsResponse,
+  AdminEvent
 } from '@/lib/api'
 import {
   mockShops, mockShipments, mockRiders, mockSellers, mockOrderChats,
@@ -23,6 +24,7 @@ export default async function AdminPage() {
   let riderRegistrations: RiderRegistration[] = []
   let conversionMetrics: ConversionMetrics = mockConversionMetrics
   let visitorStats: AdminVisitorStatsResponse = mockVisitorStats
+  let recentEvents: AdminEvent[] = []
   let loadError: string | null = null
 
   try {
@@ -77,6 +79,12 @@ export default async function AdminPage() {
     visitorStats = mockVisitorStats
   }
 
+  try {
+    recentEvents = await getRecentAdminEvents()
+  } catch {
+    recentEvents = []
+  }
+
   if (loadError) {
     return (
       <main style={{ maxWidth: 900, margin: '0 auto', padding: '32px 20px' }}>
@@ -106,7 +114,9 @@ export default async function AdminPage() {
       initialRiderRegistrations={riderRegistrations}
       initialConversionMetrics={conversionMetrics}
       initialVisitorStats={visitorStats}
+      initialRecentEvents={recentEvents}
     />
   )
 }
+
 
