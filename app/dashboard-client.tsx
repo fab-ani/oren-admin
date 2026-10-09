@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useTransition, useActionState, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useTransition, useActionState, useRef } from 'react'
 import {
   Shop, Shipment, Rider, Seller, OrderChat,
   ShopRegistration, RiderRegistration, ConversionMetrics, BroadcastAudience,
@@ -404,7 +404,57 @@ export function DashboardClient({
     }
   }
 
-  // Polling for recent events every 25 seconds
+  const [isRefreshingEvents, setIsRefreshingEvents] = useState(false)
+
+  const syncEvents = useCallback(async (isManual = false) => {
+    try {
+      if (isManual) setIsRefreshingEvents(true)
+      const res = await fetchRecentAdminEventsAction()
+      if (res.ok && res.events && res.events.length > 0) {
+        setRecentEvents(res.events)
+
+        // Check for new unseen events
+        const newEvents = res.events.filter((e) => !seenEventIds.has(e.id))
+        if (newEvents.length > 0) {
+          const nextSeen = new Set(seenEventIds)
+          newEvents.forEach((e) => nextSeen.add(e.id))
+          setSeenEventIds(nextSeen)
+          try {
+            localStorage.setItem('oren_seen_event_ids', JSON.stringify(Array.from(nextSeen).slice(-100)))
+          } catch {}
+
+          // Trigger alert for the newest event
+          const latestEvent = newEvents[0]
+          setToastNotification(latestEvent)
+
+          if (soundEnabled) {
+            playNotificationChime()
+          }
+
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            try {
+              navigator.vibrate([200, 100, 200])
+            } catch {}
+          }
+
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification(latestEvent.title, {
+                body: latestEvent.message,
+                icon: '/favicon.ico',
+              })
+            } catch {}
+          }
+        }
+      }
+    } catch {
+      // Tolerated polling failure
+    } finally {
+      if (isManual) setIsRefreshingEvents(false)
+    }
+  }, [seenEventIds, soundEnabled])
+
+  // Polling for recent events every 4 hours (avoids unnecessary server load)
   useEffect(() => {
     try {
       if (seenEventIds.size > 0) {
@@ -412,53 +462,12 @@ export function DashboardClient({
       }
     } catch {}
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetchRecentAdminEventsAction()
-        if (res.ok && res.events && res.events.length > 0) {
-          setRecentEvents(res.events)
-
-          // Check for new unseen events
-          const newEvents = res.events.filter((e) => !seenEventIds.has(e.id))
-          if (newEvents.length > 0) {
-            const nextSeen = new Set(seenEventIds)
-            newEvents.forEach((e) => nextSeen.add(e.id))
-            setSeenEventIds(nextSeen)
-            try {
-              localStorage.setItem('oren_seen_event_ids', JSON.stringify(Array.from(nextSeen).slice(-100)))
-            } catch {}
-
-            // Trigger alert for the newest event
-            const latestEvent = newEvents[0]
-            setToastNotification(latestEvent)
-
-            if (soundEnabled) {
-              playNotificationChime()
-            }
-
-            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-              try {
-                navigator.vibrate([200, 100, 200])
-              } catch {}
-            }
-
-            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-              try {
-                new Notification(latestEvent.title, {
-                  body: latestEvent.message,
-                  icon: '/favicon.ico',
-                })
-              } catch {}
-            }
-          }
-        }
-      } catch {
-        // Tolerated polling failure
-      }
-    }, 25000)
+    const interval = setInterval(() => {
+      syncEvents(false)
+    }, 4 * 60 * 60 * 1000)
 
     return () => clearInterval(interval)
-  }, [seenEventIds, soundEnabled])
+  }, [seenEventIds, syncEvents])
 
   // Toast auto-dismiss after 7 seconds
   useEffect(() => {
@@ -2311,7 +2320,18 @@ export function DashboardClient({
                 <span className="text-xs font-bold text-[#5b5b5b] uppercase tracking-wider">
                   Recent Events ({recentEvents.length})
                 </span>
-                <span className="text-[11px] text-[#8a8a8a]">Auto-synced every 25s</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#8a8a8a]">Auto-synced every 4 hrs</span>
+                  <button
+                    onClick={() => syncEvents(true)}
+                    disabled={isRefreshingEvents}
+                    className="text-[11px] font-bold text-[#d85a30] hover:underline flex items-center gap-1 disabled:opacity-50"
+                    title="Check for new events now"
+                  >
+                    <span className={isRefreshingEvents ? 'animate-spin inline-block' : ''}>🔄</span>
+                    <span>{isRefreshingEvents ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                </div>
               </div>
 
               {recentEvents.length === 0 ? (
