@@ -11,8 +11,9 @@ import {
   fetchShipmentTracking, removeShop, announceToAll, removeShipment,
   removeOrderChat, approveRegistrationAction, rejectRegistrationAction,
   removeRider, approveRiderRegistrationAction,
-  rejectRiderRegistrationAction, triggerDailyVisitorNotificationsAction
+  rejectRiderRegistrationAction
 } from './actions'
+
 
 import { CopyTokenButton } from './copy-token-button'
 import { DeleteShopButton } from './delete-shop-button'
@@ -312,8 +313,6 @@ export function DashboardClient({
 
   // Visitor notifications & stats
   const [visitorStats] = useState<AdminVisitorStatsResponse | undefined>(initialVisitorStats)
-  const [visitorPushPending, setVisitorPushPending] = useState(false)
-  const [visitorPushResult, setVisitorPushResult] = useState<string | null>(null)
 
   const shopVisitorsMap = React.useMemo(() => {
     const map: Record<number, { today_visitors: number; yesterday_visitors: number }> = {}
@@ -328,33 +327,6 @@ export function DashboardClient({
     return map
   }, [visitorStats])
 
-  const handleTriggerVisitorPush = async () => {
-    if (!confirm('Tuma push notifications kwa wamiliki wa maduka yaliyotembelewa leo? (Maduka yenye wateja > 0 pekee ndio yatapokea taarifa)')) {
-      return
-    }
-    setVisitorPushPending(true)
-    setVisitorPushResult(null)
-    try {
-      const res = await triggerDailyVisitorNotificationsAction()
-      if (res.ok && res.data) {
-        const d = res.data
-        const sentCount = d.sent?.length ?? d.notifications_sent ?? 0
-        const zeroCount = d.skipped_zero?.length ?? 0
-        const alreadyCount = (d.already_sent?.length ?? d.skipped_already_sent?.length ?? 0)
-        const totalCount = d.shops_evaluated ?? (sentCount + zeroCount + alreadyCount + (d.no_fcm_token?.length ?? 0))
-
-        const msg = `✓ Ilitumwa kwa maduka ${sentCount} kati ya ${totalCount} yaliyochunguzwa leo (${zeroCount} bila wateja, ${alreadyCount} tayari yalipokea).`
-        setVisitorPushResult(msg)
-      } else {
-        const errMsg = res.error || 'Imeshindikana kutuma push notifications.'
-        setVisitorPushResult(`✕ ${errMsg}`)
-      }
-    } catch (e) {
-      setVisitorPushResult(e instanceof Error ? `✕ ${e.message}` : '✕ Hitilafu imetokea.')
-    } finally {
-      setVisitorPushPending(false)
-    }
-  }
 
 
 
@@ -1759,32 +1731,10 @@ export function DashboardClient({
                     Manage merchant profiles, generate shop claim tokens, and configure storefronts.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleTriggerVisitorPush}
-                    disabled={visitorPushPending}
-                    className="px-3.5 py-2 bg-white border border-[#e5e2dc] hover:bg-[#f7f7f5] text-[#1a1a1a] rounded-xl text-xs font-semibold shadow-2xs flex items-center gap-2 transition-colors disabled:opacity-50"
-                    title="Tuma taarifa ya wageni wa leo mara moja kwa wamiliki wa maduka yaliyotembelewa"
-                  >
-                    <span>👀</span>
-                    <span>{visitorPushPending ? 'Inatuma Push…' : 'Tuma Push ya Wageni Leo'}</span>
-                  </button>
-                </div>
               </div>
 
-              {visitorPushResult && (
-                <div className="mb-4 p-3 rounded-xl text-xs font-medium bg-[#f0faf5] border border-[#0f6e56]/20 text-[#0f6e56] flex items-center justify-between">
-                  <span>{visitorPushResult}</span>
-                  <button
-                    onClick={() => setVisitorPushResult(null)}
-                    className="text-base text-[#5b5b5b] hover:text-[#1a1a1a] leading-none ml-2"
-                  >
-                    &times;
-                  </button>
-                </div>
-              )}
-
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+
                 {/* Shops Table */}
                 <div className="bg-white border border-[#e5e2dc] rounded-2xl shadow-xs overflow-hidden lg:col-span-2">
                   <div className="p-4 border-b border-[#e5e2dc] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
