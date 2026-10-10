@@ -568,7 +568,14 @@ export async function triggerDailyVisitorNotifications(
 
 export type AdminEvent = {
   id: string
-  type: 'order_completed' | 'visitor_job_completed' | string
+  type:
+    | 'order_completed'
+    | 'visitor_job_completed'
+    | 'all_boda_busy'
+    | 'all_boda_rejected'
+    | 'no_boda_available'
+    | 'rider_accepted'
+    | string
   title: string
   message: string
   timestamp: string | null

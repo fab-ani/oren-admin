@@ -466,7 +466,22 @@ export function DashboardClient({
       syncEvents(false)
     }, 4 * 60 * 60 * 1000)
 
-    return () => clearInterval(interval)
+    const handleFocus = () => {
+      syncEvents(false)
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncEvents(false)
+      }
+    }
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [seenEventIds, syncEvents])
 
   // Toast auto-dismiss after 7 seconds
@@ -2185,16 +2200,62 @@ export function DashboardClient({
 
       {/* FLOATING TOAST NOTIFICATION */}
       {toastNotification && (
-        <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-50 max-w-sm sm:max-w-md w-[calc(100%-2rem)] bg-white border-2 border-[#d85a30] shadow-2xl rounded-2xl p-4 transition-all duration-300">
+        <div className={`fixed top-4 right-4 sm:top-6 sm:right-6 z-50 max-w-sm sm:max-w-md w-[calc(100%-2rem)] bg-white border-2 shadow-2xl rounded-2xl p-4 transition-all duration-300 ${
+          toastNotification.type === 'all_boda_busy' || toastNotification.type === 'all_boda_rejected'
+            ? 'border-red-500 ring-2 ring-red-200'
+            : toastNotification.type === 'no_boda_available'
+            ? 'border-amber-500 ring-2 ring-amber-200'
+            : 'border-[#d85a30]'
+        }`}>
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#faeeda] text-xl flex items-center justify-center shrink-0">
-                {toastNotification.type === 'order_completed' ? '📦' : toastNotification.type === 'visitor_job_completed' ? '👥' : '🔔'}
+              <div className={`w-10 h-10 rounded-xl text-xl flex items-center justify-center shrink-0 ${
+                toastNotification.type === 'all_boda_busy' || toastNotification.type === 'all_boda_rejected'
+                  ? 'bg-red-100 text-red-700'
+                  : toastNotification.type === 'no_boda_available'
+                  ? 'bg-amber-100 text-amber-700'
+                  : toastNotification.type === 'rider_accepted'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-[#faeeda]'
+              }`}>
+                {toastNotification.type === 'order_completed'
+                  ? '📦'
+                  : toastNotification.type === 'visitor_job_completed'
+                  ? '👥'
+                  : toastNotification.type === 'all_boda_busy'
+                  ? '🚨'
+                  : toastNotification.type === 'all_boda_rejected'
+                  ? '❌'
+                  : toastNotification.type === 'no_boda_available'
+                  ? '⚠️'
+                  : toastNotification.type === 'rider_accepted'
+                  ? '🛵'
+                  : '🔔'}
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#faeeda] text-[#d85a30]">
-                    {toastNotification.type === 'order_completed' ? 'Delivered Order' : toastNotification.type === 'visitor_job_completed' ? 'Visitor Push Sent' : 'Alert'}
+                  <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                    toastNotification.type === 'all_boda_busy' || toastNotification.type === 'all_boda_rejected'
+                      ? 'bg-red-100 text-red-700'
+                      : toastNotification.type === 'no_boda_available'
+                      ? 'bg-amber-100 text-amber-800'
+                      : toastNotification.type === 'rider_accepted'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-[#faeeda] text-[#d85a30]'
+                  }`}>
+                    {toastNotification.type === 'order_completed'
+                      ? 'Delivered Order'
+                      : toastNotification.type === 'visitor_job_completed'
+                      ? 'Visitor Push Sent'
+                      : toastNotification.type === 'all_boda_busy'
+                      ? 'All Boda Busy'
+                      : toastNotification.type === 'all_boda_rejected'
+                      ? 'All Boda Rejected'
+                      : toastNotification.type === 'no_boda_available'
+                      ? 'No Boda Online'
+                      : toastNotification.type === 'rider_accepted'
+                      ? 'Boda Accepted'
+                      : 'Alert'}
                   </span>
                   {toastNotification.timestamp && (
                     <span className="text-[11px] text-[#8a8a8a]">
@@ -2343,16 +2404,53 @@ export function DashboardClient({
                 recentEvents.map((evt) => (
                   <div
                     key={evt.id}
-                    className="bg-white border border-[#e5e2dc] rounded-xl p-3.5 shadow-xs hover:border-[#d85a30]/40 transition-colors"
+                    className={`rounded-xl p-3.5 shadow-xs transition-colors ${
+                      evt.type === 'all_boda_busy' || evt.type === 'all_boda_rejected'
+                        ? 'bg-red-50/40 border-2 border-red-300 hover:border-red-400'
+                        : evt.type === 'no_boda_available'
+                        ? 'bg-amber-50/30 border-2 border-amber-300 hover:border-amber-400'
+                        : evt.type === 'rider_accepted'
+                        ? 'bg-emerald-50/20 border border-emerald-300 hover:border-emerald-400'
+                        : 'bg-white border border-[#e5e2dc] hover:border-[#d85a30]/40'
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="text-lg">
-                          {evt.type === 'order_completed' ? '📦' : evt.type === 'visitor_job_completed' ? '👥' : '🔔'}
+                          {evt.type === 'order_completed'
+                            ? '📦'
+                            : evt.type === 'visitor_job_completed'
+                            ? '👥'
+                            : evt.type === 'all_boda_busy'
+                            ? '🚨'
+                            : evt.type === 'all_boda_rejected'
+                            ? '❌'
+                            : evt.type === 'no_boda_available'
+                            ? '⚠️'
+                            : evt.type === 'rider_accepted'
+                            ? '🛵'
+                            : '🔔'}
                         </span>
-                        <span className="font-bold text-xs text-[#1a1a1a]">
-                          {evt.title}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-[#1a1a1a]">
+                            {evt.title}
+                          </span>
+                          {(evt.type === 'all_boda_busy' || evt.type === 'all_boda_rejected') && (
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">
+                              Critical Alert
+                            </span>
+                          )}
+                          {evt.type === 'no_boda_available' && (
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                              No Riders
+                            </span>
+                          )}
+                          {evt.type === 'rider_accepted' && (
+                            <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                              Boda Assigned
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <span className="text-[10px] text-[#8a8a8a] shrink-0 whitespace-nowrap">
                         {evt.timestamp ? new Date(evt.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
@@ -2363,6 +2461,11 @@ export function DashboardClient({
                     </p>
                     {evt.metadata && (
                       <div className="mt-2 pl-7 flex flex-wrap gap-2 text-[10px] text-[#8a8a8a]">
+                        {Boolean(evt.metadata.shipment_id) && (
+                          <span className="bg-[#f7f7f5] px-2 py-0.5 rounded border border-[#e5e2dc]">
+                            Shipment #{String(evt.metadata.shipment_id)}
+                          </span>
+                        )}
                         {Boolean(evt.metadata.order_id) && (
                           <span className="bg-[#f7f7f5] px-2 py-0.5 rounded border border-[#e5e2dc]">
                             Order #{String(evt.metadata.order_id)}
