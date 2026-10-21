@@ -595,5 +595,58 @@ export async function getRecentAdminEvents(): Promise<AdminEvent[]> {
   return (body.events || []) as AdminEvent[]
 }
 
+export type UserFeedback = {
+  id: number
+  name: string | null
+  phone: string | null
+  clean_phone: string | null
+  wa_link: string | null
+  category: string | null
+  rating: number | null
+  message: string
+  app_version: string | null
+  device_info: string | null
+  status: 'new' | 'reviewed'
+  created_at: string | null
+}
 
+export async function listFeedbacks(): Promise<UserFeedback[]> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/feedbacks`, {
+    headers: { 'X-Admin-Token': ADMIN_TOKEN! },
+    cache: 'no-store',
+  })
+  const body = await res.json()
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error || `Failed to list feedbacks (${res.status})`)
+  }
+  return (body.feedbacks || []) as UserFeedback[]
+}
 
+export async function updateFeedbackStatus(id: number, status: 'new' | 'reviewed'): Promise<void> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/feedbacks/${id}/status`, {
+    method: 'POST',
+    headers: {
+      'X-Admin-Token': ADMIN_TOKEN!,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ status }),
+  })
+  const body = await res.json()
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error || `Failed to update feedback status (${res.status})`)
+  }
+}
+
+export async function deleteFeedback(id: number): Promise<void> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/feedbacks/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-Admin-Token': ADMIN_TOKEN! },
+  })
+  const body = await res.json()
+  if (!res.ok || !body.ok) {
+    throw new Error(body.error || `Failed to delete feedback (${res.status})`)
+  }
+}

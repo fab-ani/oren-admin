@@ -10,11 +10,13 @@ import {
   approveRiderRegistration, rejectRiderRegistration,
   updateFollowUp, BroadcastAudience,
   triggerDailyVisitorNotifications,
-  getRecentAdminEvents
+  getRecentAdminEvents,
+  updateFeedbackStatus, deleteFeedback, listFeedbacks
 } from '@/lib/api'
 
 
-import { destroySession } from '@/lib/session'
+import { destroySession, SESSION_COOKIE_NAME } from '@/lib/session'
+import { cookies } from 'next/headers'
 
 export async function registerShop(
   _prevState: string | null,
@@ -294,4 +296,34 @@ export async function fetchRecentAdminEventsAction() {
   }
 }
 
+export async function toggleFeedbackStatusAction(id: number, status: 'new' | 'reviewed') {
+  try {
+    await updateFeedbackStatus(id, status)
+    revalidatePath('/')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to update feedback status' }
+  }
+}
 
+export async function deleteFeedbackAction(id: number) {
+  try {
+    await deleteFeedback(id)
+    revalidatePath('/')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to delete feedback' }
+  }
+}
+
+
+export async function refreshFeedbacksAction() {
+  try {
+    const secret = process.env.SESSION_SECRET
+    const cookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value
+    if (!secret || cookie !== secret) throw new Error('Please sign in to view feedback.')
+    return { feedbacks: await listFeedbacks(), error: null }
+  } catch (error) {
+    return { feedbacks: null, error: error instanceof Error ? error.message : 'Could not load feedback.' }
+  }
+}

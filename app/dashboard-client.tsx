@@ -4,14 +4,15 @@ import React, { useState, useEffect, useCallback, useTransition, useActionState,
 import {
   Shop, Shipment, Rider, Seller, OrderChat,
   ShopRegistration, RiderRegistration, ConversionMetrics, BroadcastAudience,
-  AdminVisitorStatsResponse, AdminEvent
+  AdminVisitorStatsResponse, AdminEvent, UserFeedback
 } from '@/lib/api'
 import {
   logout, registerShop, registerRider, toggleRiderStatus,
   fetchShipmentTracking, removeShop, announceToAll, removeShipment,
   removeOrderChat, approveRegistrationAction, rejectRegistrationAction,
   removeRider, approveRiderRegistrationAction,
-  rejectRiderRegistrationAction, fetchRecentAdminEventsAction
+  rejectRiderRegistrationAction, fetchRecentAdminEventsAction,
+  toggleFeedbackStatusAction, deleteFeedbackAction, refreshFeedbacksAction
 } from './actions'
 
 
@@ -201,7 +202,7 @@ function AnnouncementForm() {
             {state.error && <span className="text-[#c0392b] font-medium">✕ {state.error}</span>}
             {state.sent !== null && !state.error && (
               <span className="text-[#0f6e56] font-medium">
-                ✓ Sent to {state.sent} device{state.sent === 1 ? '' : 's'}
+                ✓ Submitted for delivery to {state.sent}{state.targeted != null ? ` of ${state.targeted}` : ''} device{state.sent === 1 ? '' : 's'}
                 {state.target ? ` in ${AUDIENCE_OPTIONS.find((o) => o.id === state.target)?.label || state.target} audience` : ''}.
               </span>
             )}
@@ -329,6 +330,8 @@ interface DashboardClientProps {
   initialConversionMetrics?: ConversionMetrics
   initialVisitorStats?: AdminVisitorStatsResponse
   initialRecentEvents?: AdminEvent[]
+  initialFeedbacks?: UserFeedback[]
+  initialFeedbackError?: string | null
 }
 
 export function DashboardClient({
@@ -340,8 +343,10 @@ export function DashboardClient({
   initialRiderRegistrations = [],
   initialVisitorStats,
   initialRecentEvents = [],
+  initialFeedbacks = [],
+  initialFeedbackError = null,
 }: DashboardClientProps) {
-  const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'shipments' | 'riders' | 'chats' | 'conversion' | 'shops' | 'broadcast'>('overview')
+  const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'shipments' | 'riders' | 'chats' | 'conversion' | 'shops' | 'broadcast' | 'feedback'>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [requestsSubTab, setRequestsSubTab] = useState<'shops' | 'riders'>('shops')
 
@@ -349,6 +354,54 @@ export function DashboardClient({
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [followUpOrder, setFollowUpOrder] = useState<OrderChat | null>(null)
   const [resetRidersOpen, setResetRidersOpen] = useState(false)
+
+  const [feedbacks, setFeedbacks] = useState<UserFeedback[]>(initialFeedbacks)
+  const [feedbackError, setFeedbackError] = useState<string | null>(initialFeedbackError)
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
+  const [feedbackRefresh, setFeedbackRefresh] = useState(0)
+  const [feedbackSearch, setFeedbackSearch] = useState('')
+  const [feedbackFilter, setFeedbackFilter] = useState<'all' | 'new' | 'reviewed'>('all')
+  const [feedbackCategoryFilter, setFeedbackCategoryFilter] = useState<string>('all')
+  const [feedbackActionPending, setFeedbackActionPending] = useState<number | null>(null)
+
+  useEffect(() => {
+    setFeedbacks(initialFeedbacks)
+  }, [initialFeedbacks])
+
+
+  // Refresh the inbox and sidebar badge; never overwrite a pending edit.
+  useEffect(() => {
+    if (feedbackActionPending !== null) return
+    let active = true
+    let running = false
+    const refresh = async () => {
+      if (running || document.visibilityState === 'hidden') return
+      running = true
+      setFeedbackLoading(true)
+      try {
+        const result = await refreshFeedbacksAction()
+        if (!active) return
+        setFeedbackError(result.error)
+        if (result.feedbacks) setFeedbacks(result.feedbacks)
+      } catch {
+        if (active) setFeedbackError('Could not refresh feedback. Please retry.')
+      } finally {
+        running = false
+        if (active) setFeedbackLoading(false)
+      }
+    }
+    void refresh()
+    const timer = setInterval(() => { void refresh() }, 4 * 60 * 60 * 1000)
+    const onFocus = () => { void refresh() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      active = false
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [feedbackActionPending, feedbackRefresh])
 
   // Mobile & Web Live Notifications State
   const [recentEvents, setRecentEvents] = useState<AdminEvent[]>(initialRecentEvents)
@@ -748,6 +801,12 @@ export function DashboardClient({
     { key: 'conversion', label: 'Sales Recovery', icon: '🎯', badge: stalledInquiries.length > 0 ? stalledInquiries.length : null },
     { key: 'shops', label: 'Shops & Sellers', icon: '🏪', badge: initialShops.length },
     { key: 'broadcast', label: 'Broadcast', icon: '📢', badge: null },
+    {
+      key: 'feedback',
+      label: 'Feedback / Maoni',
+      icon: '📝',
+      badge: feedbacks.filter((f) => f.status === 'new').length > 0 ? feedbacks.filter((f) => f.status === 'new').length : null,
+    },
   ] as const
 
   return (
@@ -2157,6 +2216,345 @@ export function DashboardClient({
               </div>
             </div>
           )}
+
+          {/* TAB: FEEDBACK & MAONI */}
+          {currentTab === 'feedback' && (
+            <div>
+              <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-extrabold text-[#1a1a1a]">
+                    Customer & Rider Feedback / Maoni
+                  </h1>
+                  <p className="text-xs sm:text-sm text-[#5b5b5b]">
+                    Review suggestions, ratings, bug reports, and user feedback sent directly from the Oren mobile app.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 flex items-center gap-3 text-sm">
+                <button type="button" disabled={feedbackLoading || feedbackActionPending !== null}
+                  onClick={() => setFeedbackRefresh((value) => value + 1)}
+                  className="rounded-lg border px-3 py-2 disabled:opacity-50">
+                  {feedbackLoading ? 'Reloading…' : 'Reload feedback'}
+                </button>
+                {feedbackError && <p role="alert" className="text-red-700">{feedbackError} Previously loaded data may be outdated.</p>}
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
+                  <span className="text-[11px] font-bold text-[#8a8a8a] uppercase tracking-wider block">
+                    Total Feedback
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-extrabold text-[#1a1a1a] mt-1 block">
+                    {feedbacks.length}
+                  </span>
+                  <span className="text-xs text-[#5b5b5b] mt-0.5 block">
+                    All recorded
+                  </span>
+                </div>
+
+                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
+                  <span className="text-[11px] font-bold text-[#8a8a8a] uppercase tracking-wider block">
+                    New / Unreviewed
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-extrabold text-[#d85a30] mt-1 block">
+                    {feedbacks.filter((f) => f.status === 'new').length}
+                  </span>
+                  <span className="text-xs text-[#d85a30] font-medium mt-0.5 block">
+                    Requires review
+                  </span>
+                </div>
+
+                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
+                  <span className="text-[11px] font-bold text-[#8a8a8a] uppercase tracking-wider block">
+                    Avg App Rating
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-extrabold text-[#1a1a1a] mt-1 block">
+                    {(() => {
+                      const rated = feedbacks.filter((f) => f.rating && f.rating > 0)
+                      if (rated.length === 0) return '—'
+                      const avg = rated.reduce((acc, f) => acc + (f.rating || 0), 0) / rated.length
+                      return `${avg.toFixed(1)} ★`
+                    })()}
+                  </span>
+                  <span className="text-xs text-[#5b5b5b] mt-0.5 block">
+                    {feedbacks.filter((f) => f.rating && f.rating > 0).length} ratings submitted
+                  </span>
+                </div>
+
+                <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 shadow-xs">
+                  <span className="text-[11px] font-bold text-[#8a8a8a] uppercase tracking-wider block">
+                    Reviewed & Handled
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-extrabold text-[#0f6e56] mt-1 block">
+                    {feedbacks.filter((f) => f.status === 'reviewed').length}
+                  </span>
+                  <span className="text-xs text-[#0f6e56] font-medium mt-0.5 block">
+                    Marked reviewed
+                  </span>
+                </div>
+              </div>
+
+              {/* Filters & Search */}
+              <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 mb-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search feedback by name, phone, message content, or category..."
+                    value={feedbackSearch}
+                    onChange={(e) => setFeedbackSearch(e.target.value)}
+                    className="w-full text-xs sm:text-sm pl-9 pr-4 py-2 border border-[#e5e2dc] rounded-xl focus:outline-hidden focus:border-[#d85a30]"
+                  />
+                  <span className="absolute left-3 top-2.5 text-xs text-[#8a8a8a]">🔍</span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex bg-[#f7f7f5] p-1 rounded-xl border border-[#e5e2dc]">
+                    {(['all', 'new', 'reviewed'] as const).map((st) => (
+                      <button
+                        key={st}
+                        onClick={() => setFeedbackFilter(st)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${
+                          feedbackFilter === st
+                            ? 'bg-white text-[#1a1a1a] shadow-xs font-bold'
+                            : 'text-[#5b5b5b] hover:text-[#1a1a1a]'
+                        }`}
+                      >
+                        {st === 'all' ? 'All' : st === 'new' ? 'New' : 'Reviewed'}
+                        <span className="ml-1 text-[10px] opacity-75">
+                          ({st === 'all' ? feedbacks.length : feedbacks.filter((f) => f.status === st).length})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <select
+                    value={feedbackCategoryFilter}
+                    onChange={(e) => setFeedbackCategoryFilter(e.target.value)}
+                    className="text-xs font-semibold border border-[#e5e2dc] rounded-xl px-3 py-2 bg-white text-[#1a1a1a] focus:outline-hidden focus:border-[#d85a30]"
+                  >
+                    <option value="all">All Categories</option>
+                    <option value="Huduma / General">Huduma / General</option>
+                    <option value="Boda Boda">Boda Boda</option>
+                    <option value="Maduka / Shops">Maduka / Shops</option>
+                    <option value="Hitilafu / Bug">Hitilafu / Bug</option>
+                    <option value="Mengineyo / Other">Mengineyo / Other</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Feedback List */}
+              {(() => {
+                const list = feedbacks.filter((f) => {
+                  if (feedbackFilter !== 'all' && f.status !== feedbackFilter) return false
+                  if (feedbackCategoryFilter !== 'all' && f.category !== feedbackCategoryFilter) return false
+                  if (feedbackSearch.trim()) {
+                    const q = feedbackSearch.toLowerCase()
+                    return (
+                      (f.name || '').toLowerCase().includes(q) ||
+                      (f.phone || '').toLowerCase().includes(q) ||
+                      (f.message || '').toLowerCase().includes(q) ||
+                      (f.category || '').toLowerCase().includes(q)
+                    )
+                  }
+                  return true
+                })
+
+                if (list.length === 0) {
+                  return (
+                    <div className="bg-white border border-[#e5e2dc] rounded-2xl p-12 text-center shadow-xs">
+                      <div className="text-4xl mb-3">📭</div>
+                      <h3 className="text-base font-bold text-[#1a1a1a]">No Feedback Found</h3>
+                      <p className="text-xs text-[#5b5b5b] max-w-sm mx-auto mt-1">
+                        {feedbacks.length === 0
+                          ? 'No user feedback has been submitted yet from the Oren app.'
+                          : 'No feedback matches the selected filters or search terms.'}
+                      </p>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="space-y-3.5">
+                    {list.map((fb) => {
+                      const isPending = feedbackActionPending === fb.id
+                      const waPhone = fb.clean_phone || (fb.phone ? formatWhatsAppPhone(fb.phone) : '')
+                      const waReplyText = encodeURIComponent(
+                        `Habari ${fb.name ? fb.name : 'ndugu'}, asante kwa maoni yako kupitia Oren Delivery: "${fb.message.slice(0, 50)}${fb.message.length > 50 ? '...' : ''}"`
+                      )
+
+                      return (
+                        <div
+                          key={fb.id}
+                          className={`bg-white border rounded-2xl p-4 sm:p-5 shadow-xs transition-all ${
+                            fb.status === 'new'
+                              ? 'border-[#d85a30]/30 ring-1 ring-[#d85a30]/10'
+                              : 'border-[#e5e2dc]'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-[#faeeda] text-[#d85a30] font-extrabold flex items-center justify-center text-sm shrink-0">
+                                {fb.name ? fb.name.charAt(0).toUpperCase() : '👤'}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-extrabold text-sm sm:text-base text-[#1a1a1a]">
+                                    {fb.name || 'Anonymous User'}
+                                  </span>
+                                  {fb.status === 'new' ? (
+                                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#faeeda] text-[#d85a30]">
+                                      ● New
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#e1f5ee] text-[#0f6e56]">
+                                      ✓ Reviewed
+                                    </span>
+                                  )}
+                                  {fb.category && (
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f2efe9] text-[#555]">
+                                      {fb.category}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-3 text-xs text-[#5b5b5b] mt-1 flex-wrap">
+                                  {fb.phone ? (
+                                    <a
+                                      href={`tel:${fb.phone}`}
+                                      className="font-semibold text-[#1a1a1a] hover:text-[#d85a30] flex items-center gap-1"
+                                    >
+                                      <span>📞</span> {fb.phone}
+                                    </a>
+                                  ) : (
+                                    <span className="italic text-[#8a8a8a]">No phone provided</span>
+                                  )}
+                                  <span>•</span>
+                                  <span>
+                                    {fb.created_at
+                                      ? new Date(fb.created_at).toLocaleString([], {
+                                          month: 'short',
+                                          day: 'numeric',
+                                          year: 'numeric',
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                        })
+                                      : ''}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Rating Stars */}
+                            {fb.rating && fb.rating > 0 ? (
+                              <div className="flex items-center gap-1 bg-[#fff8eb] border border-[#f5dfa8] px-3 py-1.5 rounded-xl self-start sm:self-auto">
+                                <span className="text-amber-500 text-sm">
+                                  {'★'.repeat(Math.min(5, Math.max(1, fb.rating)))}
+                                  {'☆'.repeat(Math.max(0, 5 - fb.rating))}
+                                </span>
+                                <span className="text-xs font-extrabold text-[#784d00] ml-1">
+                                  {fb.rating}/5
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {/* Message Content */}
+                          <div className="mt-3.5 bg-[#fafaf8] border border-[#f0eee9] rounded-xl p-3.5 text-xs sm:text-sm text-[#2b2b2b] whitespace-pre-wrap leading-relaxed font-normal">
+                            {fb.message}
+                          </div>
+
+                          {/* Metadata & Actions Footer */}
+                          <div className="mt-3.5 pt-3 border-t border-[#f0eee9] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 flex-wrap text-[11px] text-[#8a8a8a]">
+                              {fb.app_version && (
+                                <span className="bg-[#f5f4f0] px-2 py-0.5 rounded-md border border-[#e8e6e0]">
+                                  v{fb.app_version}
+                                </span>
+                              )}
+                              {fb.device_info && (
+                                <span className="bg-[#f5f4f0] px-2 py-0.5 rounded-md border border-[#e8e6e0]">
+                                  📱 {fb.device_info}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {/* Direct WhatsApp Reply */}
+                              {waPhone && (
+                                <a
+                                  href={`https://wa.me/${waPhone}?text=${waReplyText}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1.5 bg-[#25D366] hover:bg-[#20ba59] text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+                                >
+                                  <span>💬</span> WhatsApp Reply
+                                </a>
+                              )}
+
+                              {/* Toggle Status */}
+                              <button
+                                onClick={async () => {
+                                  const next = fb.status === 'reviewed' ? 'new' : 'reviewed'
+                                  setFeedbackActionPending(fb.id)
+                                  setFeedbacks((prev) =>
+                                    prev.map((item) => (item.id === fb.id ? { ...item, status: next } : item))
+                                  )
+                                  const res = await toggleFeedbackStatusAction(fb.id, next)
+                                  if (!res.ok) {
+                                    alert(res.error || 'Failed to update feedback status')
+                                    setFeedbacks((prev) =>
+                                      prev.map((item) => (item.id === fb.id ? { ...item, status: fb.status } : item))
+                                    )
+                                  }
+                                  setFeedbackActionPending(null)
+                                }}
+                                disabled={isPending}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors ${
+                                  fb.status === 'new'
+                                    ? 'bg-[#e1f5ee] hover:bg-[#d0f0e4] text-[#0f6e56] border-[#0f6e56]/30'
+                                    : 'bg-[#faeeda] hover:bg-[#f3e1c0] text-[#854f0b] border-[#854f0b]/30'
+                                }`}
+                              >
+                                {isPending
+                                  ? 'Saving...'
+                                  : fb.status === 'new'
+                                  ? '✓ Mark Reviewed'
+                                  : '↺ Mark as New'}
+                              </button>
+
+                              {/* Delete */}
+                              <button
+                                onClick={async () => {
+                                  if (!confirm('Are you sure you want to delete this feedback?')) return
+                                  setFeedbackActionPending(fb.id)
+                                  const prevList = [...feedbacks]
+                                  setFeedbacks((prev) => prev.filter((item) => item.id !== fb.id))
+                                  const res = await deleteFeedbackAction(fb.id)
+                                  if (!res.ok) {
+                                    alert(res.error || 'Failed to delete feedback')
+                                    setFeedbacks(prevList)
+                                  }
+                                  setFeedbackActionPending(null)
+                                }}
+                                disabled={isPending}
+                                className="px-2.5 py-1.5 text-xs text-[#c0392b] hover:bg-[#fdf0ee] border border-transparent hover:border-[#f5c6cb] rounded-xl font-medium transition-colors"
+                                title="Delete feedback"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+          )}
+
         </div>
       </main>
 
