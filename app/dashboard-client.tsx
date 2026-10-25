@@ -1638,7 +1638,7 @@ export function DashboardClient({
                                 </div>
                                 {r.registration_source === 'shop' && (
                                   <div className="text-[11px] text-[#5b5b5b]">
-                                    Shop rider · {r.shop_rider_enabled ? 'Shop offers enabled' : 'Shop offers paused'}
+                                    Shop rider · {r.shop_rider_state === 'removed' ? 'Removed from shop' : r.shop_rider_enabled ? 'Shop offers enabled' : 'Shop offers paused'}
                                   </div>
                                 )}
                               </td>
