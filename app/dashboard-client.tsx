@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import React, { useState, useEffect, useCallback, useTransition, useActionState, useRef } from 'react'
 import {
   Shop, Shipment, Rider, Seller, OrderChat,
@@ -625,6 +626,7 @@ export function DashboardClient({
   // Searches
   const [shipmentSearch, setShipmentSearch] = useState('')
   const [shipmentStatusFilter, setShipmentStatusFilter] = useState<string>('all')
+  const router = useRouter()
   const [riderSearch, setRiderSearch] = useState('')
   const [chatSearch, setChatSearch] = useState('')
   const [chatConsentFilter, setChatConsentFilter] = useState<'all' | 'consented' | 'unconsented'>('all')
@@ -764,7 +766,8 @@ export function DashboardClient({
       (r.name || '').toLowerCase().includes(q) ||
       r.phone.includes(q) ||
       (r.location || '').toLowerCase().includes(q) ||
-      (r.token || '').toLowerCase().includes(q)
+      (r.token || '').toLowerCase().includes(q) ||
+      (r.registered_shop_name || '').toLowerCase().includes(q)
     )
   })
 
@@ -1562,6 +1565,13 @@ export function DashboardClient({
 
                 <div className="flex items-center gap-2 self-start sm:self-auto">
                   <button
+                    onClick={() => startTransition(() => router.refresh())}
+                    disabled={isPending}
+                    className="px-3.5 py-2 border border-[#e5e2dc] rounded-xl text-xs font-bold disabled:opacity-50"
+                  >
+                    {isPending ? 'Reloading…' : 'Reload riders'}
+                  </button>
+                  <button
                     onClick={() => setResetRidersOpen(true)}
                     className="px-3.5 py-2 border border-[#c0392b]/40 bg-[#fdf0ee] text-[#c0392b] rounded-xl text-xs font-bold hover:bg-[#fadcd7] transition-colors"
                   >
@@ -1585,11 +1595,11 @@ export function DashboardClient({
                 <div className="bg-white border border-[#e5e2dc] rounded-2xl shadow-xs overflow-hidden lg:col-span-2">
                   <div className="p-4 border-b border-[#e5e2dc] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <span className="text-sm font-bold text-[#1a1a1a]">
-                      Active Riders ({filteredRiders.length})
+                      Registered Riders ({filteredRiders.length})
                     </span>
                     <input
                       type="text"
-                      placeholder="Search rider, phone, token..."
+                      placeholder="Search rider, shop, phone, token..."
                       value={riderSearch}
                       onChange={(e) => setRiderSearch(e.target.value)}
                       className="text-xs py-1.5 px-3 max-w-[200px]"
@@ -1601,6 +1611,7 @@ export function DashboardClient({
                       <thead className="bg-[#fafaf8] border-b border-[#e5e2dc] text-[#5b5b5b] uppercase text-[11px] font-semibold">
                         <tr>
                           <th className="p-3.5">Rider Name</th>
+                          <th className="p-3.5">Registered by</th>
                           <th className="p-3.5">Phone Number</th>
                           <th className="p-3.5">Location</th>
                           <th className="p-3.5">Claim Token</th>
@@ -1611,14 +1622,26 @@ export function DashboardClient({
                       <tbody className="divide-y divide-[#e5e2dc]">
                         {filteredRiders.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="p-8 text-center text-[#8a8a8a]">
-                              No riders currently active. Register a rider or approve requests above.
+                            <td colSpan={7} className="p-8 text-center text-[#8a8a8a]">
+                              No matching riders. Register a rider, approve an application, or reload for shop registrations.
                             </td>
                           </tr>
                         ) : (
                           filteredRiders.map((r) => (
                             <tr key={r.id} className="hover:bg-[#fafaf8]">
                               <td className="p-3.5 font-bold text-[#1a1a1a]">{r.name || 'Rider'}</td>
+                              <td className="p-3.5">
+                                <div className="font-semibold text-[#1a1a1a]">
+                                  {r.registration_source === 'shop'
+                                    ? r.registered_shop_name || `Shop #${r.registered_shop_id}`
+                                    : r.registration_source === 'oren' ? 'Oren' : 'Not provided'}
+                                </div>
+                                {r.registration_source === 'shop' && (
+                                  <div className="text-[11px] text-[#5b5b5b]">
+                                    Shop rider · {r.shop_rider_enabled ? 'Shop offers enabled' : 'Shop offers paused'}
+                                  </div>
+                                )}
+                              </td>
                               <td className="p-3.5 font-mono">
                                 <div>{r.phone}</div>
                                 {r.wa_link && (

@@ -73,6 +73,10 @@ export type Shipment = {
 }
 
 export type Rider = {
+  registration_source?: 'oren' | 'shop'
+  registered_shop_id?: number | null
+  registered_shop_name?: string | null
+  shop_rider_enabled?: boolean | null
   id: number
   name?: string | null
   phone: string
