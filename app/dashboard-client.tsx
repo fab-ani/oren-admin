@@ -10,13 +10,14 @@ import {
 import {
   logout, registerShop, registerRider, toggleRiderStatus,
   fetchShipmentTracking, removeShop, announceToAll, removeShipment,
-  removeOrderChat, approveRegistrationAction, rejectRegistrationAction,
+  removeOrderChat, deleteOrderChatAction, approveRegistrationAction, rejectRegistrationAction,
   removeRider, approveRiderRegistrationAction,
   rejectRiderRegistrationAction, fetchRecentAdminEventsAction,
   toggleFeedbackStatusAction, deleteFeedbackAction, refreshFeedbacksAction
 } from './actions'
 
 
+import { ProductRequestsPanel } from './product-requests-panel'
 import { CopyTokenButton } from './copy-token-button'
 import { DeleteShopButton } from './delete-shop-button'
 import { EditShopButton } from './edit-shop-button'
@@ -347,7 +348,7 @@ export function DashboardClient({
   initialFeedbacks = [],
   initialFeedbackError = null,
 }: DashboardClientProps) {
-  const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'shipments' | 'riders' | 'chats' | 'conversion' | 'shops' | 'broadcast' | 'feedback'>('overview')
+  const [currentTab, setCurrentTab] = useState<'overview' | 'requests' | 'shipments' | 'riders' | 'chats' | 'conversion' | 'shops' | 'broadcast' | 'feedback' | 'product_requests'>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [requestsSubTab, setRequestsSubTab] = useState<'shops' | 'riders'>('shops')
 
@@ -355,6 +356,29 @@ export function DashboardClient({
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [followUpOrder, setFollowUpOrder] = useState<OrderChat | null>(null)
   const [resetRidersOpen, setResetRidersOpen] = useState(false)
+
+  const [chats, setChats] = useState<OrderChat[]>(initialOrderChats)
+  const [deletingChatId, setDeletingChatId] = useState<number | null>(null)
+
+  useEffect(() => {
+    setChats(initialOrderChats)
+  }, [initialOrderChats])
+
+  const handleDeleteChat = async (orderId: number, buyerName: string) => {
+    if (!confirm(`Delete the chat with ${buyerName}? This clears the conversation and removes it from the dashboard. This action cannot be undone.`)) {
+      return
+    }
+    setDeletingChatId(orderId)
+    const prevChats = [...chats]
+    setChats((prev) => prev.filter((c) => c.order_id !== orderId))
+    const res = await deleteOrderChatAction(orderId)
+    if (!res.ok) {
+      alert(res.error || 'Failed to delete chat')
+      setChats(prevChats)
+    }
+    setDeletingChatId(null)
+  }
+
 
   const [feedbacks, setFeedbacks] = useState<UserFeedback[]>(initialFeedbacks)
   const [feedbackError, setFeedbackError] = useState<string | null>(initialFeedbackError)
@@ -745,7 +769,7 @@ export function DashboardClient({
 
   const activeShipmentsCount = initialShipments.filter(s => s.status === 'in_transit' || s.status === 'arrived').length
   const activeRidersCount = initialRiders.filter(r => r.status === 'active').length
-  const stalledInquiries = initialOrderChats.filter(c => c.status === 'pending_availability' || !c.reached_payment)
+  const stalledInquiries = chats.filter(c => c.status === 'pending_availability' || !c.reached_payment)
 
   // Filters
   const filteredShipments = initialShipments.filter((s) => {
@@ -771,7 +795,7 @@ export function DashboardClient({
     )
   })
 
-  const filteredChats = initialOrderChats.filter((c) => {
+  const filteredChats = chats.filter((c) => {
     const q = chatSearch.toLowerCase()
     const matchesQ =
       c.buyer_name.toLowerCase().includes(q) ||
@@ -796,11 +820,12 @@ export function DashboardClient({
 
   // Navigation Items
   const navItems = [
+    { key: 'product_requests', label: 'Product Requests', icon: '📢', badge: null },
     { key: 'overview', label: 'Overview', icon: '📊', badge: null },
     { key: 'requests', label: 'Requests', icon: '📥', badge: totalPendingRequests > 0 ? totalPendingRequests : null },
     { key: 'shipments', label: 'Shipments', icon: '🚚', badge: activeShipmentsCount > 0 ? activeShipmentsCount : null },
     { key: 'riders', label: 'Riders', icon: '🛵', badge: activeRidersCount },
-    { key: 'chats', label: 'Chats & Calls', icon: '💬', badge: initialOrderChats.length },
+    { key: 'chats', label: 'Chats & Calls', icon: '💬', badge: chats.length },
     { key: 'conversion', label: 'Sales Recovery', icon: '🎯', badge: stalledInquiries.length > 0 ? stalledInquiries.length : null },
     { key: 'shops', label: 'Shops & Sellers', icon: '🏪', badge: initialShops.length },
     { key: 'broadcast', label: 'Broadcast', icon: '📢', badge: null },
@@ -1907,9 +1932,15 @@ export function DashboardClient({
                                   >
                                     Log Call
                                   </button>
-                                  <form action={removeOrderChat.bind(null, c.order_id)}>
-                                    <DeleteChatButton buyerName={c.buyer_name} />
-                                  </form>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteChat(c.order_id, c.buyer_name)}
+                                    disabled={deletingChatId === c.order_id}
+                                    className="p-1.5 text-[#c0392b] hover:bg-[#fdf0ee] rounded-lg text-xs font-semibold disabled:opacity-50 transition-colors"
+                                    title="Delete chat"
+                                  >
+                                    {deletingChatId === c.order_id ? '⏳' : '🗑'}
+                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -2241,6 +2272,7 @@ export function DashboardClient({
           )}
 
           {/* TAB: FEEDBACK & MAONI */}
+          {currentTab === 'product_requests' && <ProductRequestsPanel />}
           {currentTab === 'feedback' && (
             <div>
               <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

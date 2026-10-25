@@ -655,3 +655,26 @@ export async function deleteFeedback(id: number): Promise<void> {
     throw new Error(body.error || `Failed to delete feedback (${res.status})`)
   }
 }
+
+
+export type ProductRequest = {
+  id: number; name: string; phone: string; details: string;
+  category: string | null; category_label: string; photo_url: string | null;
+  status: 'new' | 'in_progress' | 'fulfilled' | 'closed';
+  created_at: string; matched_shops: number;
+}
+export async function listProductRequests(): Promise<ProductRequest[]> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/product-requests`, { headers: { 'X-Admin-Token': ADMIN_TOKEN! }, cache: 'no-store' })
+  if (!res.ok) throw new Error(`Failed to load product requests (${res.status})`)
+  const body = await res.json()
+  if (!body.ok) throw new Error('Could not load product requests.')
+  return body.requests.map((r: ProductRequest) => ({ ...r, photo_url: r.photo_url ? new URL(r.photo_url, BASE_URL!).toString() : null }))
+}
+export async function updateProductRequestStatus(id: number, status: ProductRequest['status']): Promise<void> {
+  requireConfig()
+  const res = await fetch(`${BASE_URL}/api/admin/product-requests/${id}/status`, {
+    method: 'POST', headers: { 'X-Admin-Token': ADMIN_TOKEN!, 'Content-Type': 'application/json' }, body: JSON.stringify({ status }), cache: 'no-store',
+  })
+  if (!res.ok) throw new Error(`Failed to update product request (${res.status})`)
+}

@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { listProductRequests, updateProductRequestStatus, type ProductRequest } from '@/lib/api'
 import { redirect } from 'next/navigation'
 import {
   createShop, deleteShop, updateShop, updateRiderStatus,
@@ -96,6 +97,16 @@ export async function removeShipment(shipmentId: number, _formData: FormData): P
 export async function removeOrderChat(orderId: number, _formData: FormData): Promise<void> {
   await deleteOrderChat(orderId)
   revalidatePath('/')
+}
+
+export async function deleteOrderChatAction(orderId: number) {
+  try {
+    await deleteOrderChat(orderId)
+    revalidatePath('/')
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Failed to delete chat' }
+  }
 }
 
 export async function logout(): Promise<void> {
@@ -326,4 +337,24 @@ export async function refreshFeedbacksAction() {
   } catch (error) {
     return { feedbacks: null, error: error instanceof Error ? error.message : 'Could not load feedback.' }
   }
+}
+
+
+async function requireProductRequestSession() {
+  const secret = process.env.SESSION_SECRET
+  const cookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value
+  if (!secret || cookie !== secret) throw new Error('Please sign in to view product requests.')
+}
+export async function loadProductRequestsAction() {
+  try {
+    await requireProductRequestSession()
+    return { requests: await listProductRequests(), error: null }
+  } catch (e) { return { requests: null, error: e instanceof Error ? e.message : 'Could not load requests.' } }
+}
+export async function setProductRequestStatusAction(id: number, status: ProductRequest['status']) {
+  try {
+    await requireProductRequestSession()
+    await updateProductRequestStatus(id, status)
+    return { error: null }
+  } catch (e) { return { error: e instanceof Error ? e.message : 'Could not update request.' } }
 }
