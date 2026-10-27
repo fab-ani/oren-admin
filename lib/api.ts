@@ -329,7 +329,7 @@ export async function sendAnnouncement(
   message: string,
   title?: string,
   target: BroadcastAudience = 'all',
-): Promise<{ sent: number; targeted?: number; target?: BroadcastAudience }> {
+): Promise<{ sent: number; targeted?: number; target?: BroadcastAudience; failed?: number; pruned?: number; error?: string }> {
   requireConfig()
   const res = await fetch(`${BASE_URL}/api/admin/announcements`, {
     method: 'POST',
@@ -340,10 +340,15 @@ export async function sendAnnouncement(
     body: JSON.stringify({ message, title, target }),
   })
   const body = await res.json()
-  if (!res.ok || !body.ok) {
+  if ((!res.ok || !body.ok) && typeof body.sent !== 'number') {
     throw new Error(body.error || `Failed to send announcement (${res.status})`)
   }
-  return { sent: body.sent, targeted: body.targeted, target: body.target }
+  return {
+    sent: body.sent, targeted: body.targeted, target: body.target,
+    failed: body.failed ?? (typeof body.targeted === 'number' ? body.targeted - body.sent : undefined),
+    pruned: body.pruned,
+    error: !res.ok || !body.ok ? body.error || 'No notifications were accepted.' : undefined,
+  }
 }
 
 export async function listShopRegistrations(status?: string): Promise<ShopRegistration[]> {

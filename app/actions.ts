@@ -224,6 +224,8 @@ export type AnnouncementResult = {
   error: string | null
   sent: number | null
   targeted?: number | null
+  failed?: number
+  pruned?: number
   target?: BroadcastAudience | null
 }
 
@@ -244,7 +246,7 @@ export async function announceToAll(
 
   try {
     const res = await sendAnnouncement(message, title || undefined, target)
-    return { error: null, sent: res.sent, targeted: res.targeted, target: res.target || target }
+    return { error: res.error || null, sent: res.sent, targeted: res.targeted, target: res.target || target, failed: res.failed, pruned: res.pruned }
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'Failed to send announcement.', sent: null }
   }

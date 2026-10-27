@@ -202,11 +202,22 @@ function AnnouncementForm() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
           <div className="text-xs">
             {state.error && <span className="text-[#c0392b] font-medium">✕ {state.error}</span>}
-            {state.sent !== null && !state.error && (
-              <span className="text-[#0f6e56] font-medium">
-                ✓ Submitted for delivery to {state.sent}{state.targeted != null ? ` of ${state.targeted}` : ''} device{state.sent === 1 ? '' : 's'}
-                {state.target ? ` in ${AUDIENCE_OPTIONS.find((o) => o.id === state.target)?.label || state.target} audience` : ''}.
-              </span>
+            {state.sent !== null && (
+              <div role="status" aria-live="polite" className="mt-2 space-y-2">
+                <p className="text-[#0f6e56] font-semibold text-sm">
+                  {state.sent} notification{state.sent === 1 ? '' : 's'} accepted by Firebase for delivery
+                </p>
+                <p className="text-[#5b5b5b]">
+                  Audience: {AUDIENCE_OPTIONS.find((o) => o.id === state.target)?.label || selectedAudience.label}
+                </p>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[#5b5b5b]">
+                  <dt>Registrations targeted</dt><dd className="font-semibold">{state.targeted ?? 'Unavailable'}</dd>
+                  <dt>Accepted for delivery</dt><dd className="font-semibold">{state.sent}</dd>
+                  <dt>Failed submissions</dt><dd className="font-semibold">{state.failed ?? 'Unavailable'}</dd>
+                  <dt>Invalid registrations removed</dt><dd className="font-semibold">{state.pruned ?? 'Unavailable'}</dd>
+                </dl>
+                <p className="text-[#5b5b5b]">Removed registrations are included in failed submissions. Firebase acceptance does not confirm display or opening on the phone.</p>
+              </div>
             )}
           </div>
           <button
