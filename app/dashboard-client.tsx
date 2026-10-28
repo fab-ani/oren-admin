@@ -139,6 +139,7 @@ function AnnouncementForm() {
     <div className="bg-white border border-[#e5e2dc] rounded-2xl p-4 sm:p-6 shadow-sm">
       <div className="mb-4">
         <h3 className="text-base font-bold text-[#1a1a1a]">Push Notification Broadcast</h3>
+        <a href="/blocks" className="text-sm text-orange-700 underline">Manage user and shop restrictions</a>
         <p className="text-xs text-[#5b5b5b]">
           Send targeted or system-wide instant push notifications to Oren mobile app users.
         </p>
@@ -901,6 +902,7 @@ export function DashboardClient({
               </button>
             )
           })}
+        <a href="/blocks" className="block px-3.5 py-2.5 text-sm font-semibold text-[#5b5b5b] hover:bg-[#f7f7f5] rounded-xl">Service restrictions</a>
         </nav>
 
         {/* Footer session */}
@@ -1023,7 +1025,8 @@ export function DashboardClient({
                   </button>
                 )
               })}
-            </nav>
+            <a href="/blocks" className="block px-3.5 py-2.5 text-sm font-semibold text-[#5b5b5b] hover:bg-[#f7f7f5] rounded-xl">Service restrictions</a>
+        </nav>
           </div>
         </div>
       )}
