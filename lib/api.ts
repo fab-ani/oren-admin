@@ -663,6 +663,7 @@ export async function deleteFeedback(id: number): Promise<void> {
 
 
 export type ProductRequest = {
+  location?: string | null
   id: number; name: string; phone: string; details: string;
   category: string | null; category_label: string; photo_url: string | null;
   status: 'new' | 'in_progress' | 'fulfilled' | 'closed';

@@ -22,14 +22,14 @@ export function ProductRequestsPanel() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => {
-    void reload()
+    const initialLoad = setTimeout(() => void reload(), 0)
     const timer = setInterval(() => void reload(), 4 * 60 * 60 * 1000)
-    return () => clearInterval(timer)
+    return () => { clearTimeout(initialLoad); clearInterval(timer) }
   }, [reload])
   const categories = Array.from(new Set(items.map(i => i.category_label))).sort()
   const filtered = items.filter(i => (category === 'all' || i.category_label === category)
     && (status === 'all' || i.status === status)
-    && `${i.name} ${i.phone} ${i.details} ${i.category_label}`.toLowerCase().includes(search.toLowerCase()))
+    && `${i.name} ${i.phone} ${i.location ?? ''} ${i.details} ${i.category_label}`.toLowerCase().includes(search.toLowerCase()))
   return <section className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-2xl font-bold">Product Requests / Maombi ya Bidhaa</h1>
@@ -50,6 +50,7 @@ export function ProductRequestsPanel() {
         <div className="flex justify-between gap-3"><strong>#{item.id} · {item.category_label}</strong><span className="text-sm text-gray-500">{new Date(item.created_at).toLocaleString()}</span></div>
         <p className="whitespace-pre-wrap break-words">{item.details}</p>
         {item.photo_url && <a href={item.photo_url} target="_blank" rel="noreferrer"><img src={item.photo_url} alt="Customer product reference" className="max-h-64 max-w-full rounded-lg object-contain" /></a>}
+        <p className="text-sm text-gray-700">Location / Region: {item.location || 'Not provided (older request)'}</p>
         <p>{item.name} · <a className="underline" href={`tel:${item.phone}`}>{item.phone}</a></p>
         <p className="text-sm text-gray-600">Matched shops: {item.matched_shops}{item.matched_shops === 0 ? ' · Needs Oren follow-up' : ''}</p>
         <div className="flex flex-wrap items-center gap-3">
